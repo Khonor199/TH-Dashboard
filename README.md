@@ -3,6 +3,8 @@
 #### **Overview**
 This dashboard was created at the request of the Trading House Director to provide a comprehensive view of business performance. It includes all key metrics necessary for monitoring and decision-making, such as GMV, OTIF, order fulfillment, product categories, and delivery performance.
 
+This dashboard is highly specialized in the 1877 catalog, which is defined as a trading house catalog.
+
 ---
 
 ### 📌 **Main Sections**
