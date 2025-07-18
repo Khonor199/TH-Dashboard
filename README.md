@@ -61,8 +61,17 @@ This dashboard is highly specialized in the 1877 catalog, which is defined as a 
 
 ---
 
+#### **7. SQL_code**
+| File | Widget | Description |
+|------|--------|-------------|
+| `1.1_GMV_and_related.sql` | GMV Dynamics, Orders, Orders under 1500, Average Check, Ownership Time | Calculates key sales metrics |
+| `2.1_OTIF_analysis.sql` | OTIF by GMV and Model Count | Shows on-time and delayed orders |
+| `3.1_Cancel_reasons.sql` | Cancel Reasons | Lists reasons for supplier order cancellations |
+
+---
+
 ### 🛠️ **Data Sources**
-- SQL queries executed in ClickHouse and Postgres
+- SQL queries executed in Postgres
 - Final dataset prepared using SQL and visualized via Metabase
 
 ---
@@ -76,6 +85,6 @@ This dashboard is highly specialized in the 1877 catalog, which is defined as a 
 
 ## 🖥️ Sample Output
 
-<img width="1830" height="890" alt="image" src="https://github.com/user-attachments/assets/1163b31b-6c9e-4f03-8ace-804921e82e7c" />
 
+<img width="1827" height="898" alt="image" src="https://github.com/user-attachments/assets/7497bfd1-a88c-45e0-b886-8351cd627872" />
 
