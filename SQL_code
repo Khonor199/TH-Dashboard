@@ -1,0 +1,143 @@
+-- === 1.1 GMV график + 4.1 заказы + 5.1 GMV, Доля заказов менее 1500 + 6.1 Средний чек + 7.1 GMV, Среднее время владения (в днях) ===
+
+SELECT 
+    oi.model_id, 
+    so.supplier_id, 
+    oi.quantity "Количество", 
+    so.create_ts,
+    so.create_ts as create2,
+    b2.name as RC_name,
+    oi.quantity * (oi.unit_price + oi.unit_delivery_price) "GMV", 
+    o.id o_id,
+    (oi.unit_delivery_price - oi.origin_unit_delivery_net) * oi.quantity "GMV Последняя миля", 
+    be.legal_entity,
+    so.rc_accepted_ts,
+    so.warehouse_delivered_ts,
+    CASE 
+    WHEN so.warehouse_delivered_ts IS NULL AND so.delivered_ts IS NULL THEN 
+        (EXTRACT(EPOCH FROM (now() - so.rc_accepted_ts)) / 86400.0)::numeric(10,1)
+    ELSE 
+        CASE 
+            WHEN so.warehouse_delivered_ts IS NULL THEN 
+                (EXTRACT(EPOCH FROM (so.delivered_ts - so.rc_accepted_ts)) / 86400.0)::numeric(10,1)
+            ELSE 
+                (EXTRACT(EPOCH FROM (so.warehouse_delivered_ts - so.rc_accepted_ts)) / 86400.0)::numeric(10,1)
+        END
+    END AS "Время владения (в днях)",
+    CASE 
+        WHEN SUM(oi.quantity * (oi.unit_price + oi.unit_delivery_price)) OVER (PARTITION BY o.id) > 1500 
+        THEN 1 
+        ELSE 0 
+    END
+FROM order_service.Order_Item oi
+LEFT JOIN order_service.supplier_order so ON oi.supplier_order_id = so.id
+LEFT JOIN order_service.order o ON oi.order_id = o.id
+
+LEFT JOIN client_service.basis b on b.id = o.basis_id
+LEFT JOIN client_service.business_entity be on be.id = b.be_id
+LEFT JOIN client_service.client cl on cl.id = o.client_id
+LEFT JOIN dictionary_service.Basis b2 ON o.distribution_basis_id = b2.id
+
+WHERE so.system_status NOT IN ('DRAFT', 'DECLINED', 'CANCELED')
+AND so.create_ts > '01.01.2023'
+AND oi.catalog_id = '1877'
+
+
+
+-- === 2.1 OTIF GMV + 2.2 OTIF (количество моделей) ===
+
+WITH non_straight as (
+    SELECT
+        so.id,
+        DATE_TRUNC('day', so.date_delivery) as plan_date,
+        count(oi.model_id) counts,
+        sum(quantity * (oi.unit_price + oi.unit_delivery_price)) gmv,
+        CASE 
+            WHEN (rc_accepted_ts IS NULL AND date_delivery + INTERVAL '5 days' > NOW())
+            OR (date_delivery + INTERVAL '5 days' > rc_accepted_ts)
+        THEN 'Вовремя'
+        ELSE 'Опоздал'
+        END AS "Признак"
+        
+    FROM order_service.order_item oi
+    LEFT JOIN order_service.Supplier_Order so ON oi.supplier_order_id = so.id
+    WHERE
+        so.system_status not in ('DRAFT', 'DECLINED', 'CANCELED') 
+        and so.create_ts > '11.01.2023' 
+        and so.is_available_basis IN ('false')
+        and so.catalog_id = '1877'
+        and so.client_delivery_date < now()
+    GROUP BY 1,2
+),
+
+straight as (
+    SELECT
+        so.id,
+        DATE_TRUNC('day', so.client_delivery_date) as plan_date,
+        count(oi.model_id) counts,
+        sum(quantity * (oi.unit_price + oi.unit_delivery_price)) gmv,
+        CASE 
+            WHEN ((delivered_ts IS NULL OR warehouse_delivered_ts IS NULL) AND date_delivery + INTERVAL '5 days' > NOW())
+            OR (client_delivery_date + INTERVAL '5 days' > delivered_ts)
+            OR (client_delivery_date + INTERVAL '5 days' > warehouse_delivered_ts)
+        THEN 'Вовремя'
+        ELSE 'Опоздал'
+        END AS "Признак"
+        
+    FROM order_service.order_item oi
+    LEFT JOIN order_service.Supplier_Order so ON oi.supplier_order_id = so.id
+    WHERE
+        so.system_status not in ('DRAFT', 'DECLINED', 'CANCELED') 
+        and so.create_ts > '11.01.2023' 
+        and so.is_available_basis IN ('true')
+        and so.catalog_id = '1877'
+        and so.client_delivery_date < now()
+    GROUP BY 1,2
+)
+
+SELECT * 
+FROM non_straight
+UNION ALL 
+SELECT * 
+FROM straight
+
+
+
+-- === 3.1 Причины отмены подзаказа ===
+
+SELECT
+    so.supplier_id,
+    so.create_ts,
+    so.catalog_id,
+    COALESCE(so.canceled_ts, so.create_ts) AS times,
+    so.id,
+    
+    CASE 
+        WHEN so.system_status = 'DECLINED' THEN 'Отклонено поставщиком'
+        WHEN oh.action_type IN ('supplier_order_decline', 'supplier_order_auto_decline') THEN 'Отменено поставщиком'
+        ELSE 'Отменено заказчиком'
+    END AS "Действие",
+    
+    CASE 
+        WHEN so.system_status IN ('DECLINED', 'CANCELED') AND oh.action_type IN ('supplier_order_decline', 'supplier_order_auto_decline') THEN 1 
+        ELSE 0 
+    END AS sup,
+    
+    so.system_status,
+    REPLACE(s.name, 'ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ', '') AS name,
+    oh.detail AS "Причина отмены",
+    CASE 
+        WHEN so.system_status = 'CANCELED' THEN 1 
+        ELSE 0 
+    END AS canceled_status
+
+FROM order_service.supplier_order so
+LEFT JOIN order_service.order_history oh 
+    ON so.id = oh.supplier_order_id
+    AND oh.action_type IN ('supplier_order_decline', 'supplier_order_auto_decline')
+LEFT JOIN supplier_service.supplier s 
+    ON so.supplier_id = s.id
+
+WHERE so.create_ts > '2023-01-12'
+  AND so.catalog_id = '1877'
+  AND so.system_status IN ('DECLINED', 'CANCELED')
